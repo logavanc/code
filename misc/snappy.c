@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <snappy-c.h>
 
+#include "thirdparty/sparse-endian.h"
+
 #define CHUNK_STREAM_ID		0xFF
 #define CHUNK_COMPRESSED	0x00
 #define CHUNK_UNCOMPRESSED	0x01
@@ -120,6 +122,7 @@ int do_compress(void) {
 
 		in_crc = crc32(0, in_buf, in_len);
 		in_crc = mask_checksum(in_crc);
+		in_crc = htole32(in_crc);
 		memcpy(out_buf, &in_crc, 4);
 
 		status = snappy_compress(in_buf, in_len, out_buf+4, &out_len);
@@ -160,6 +163,7 @@ int do_uncompress(void) {
 
 		if (type == CHUNK_COMPRESSED) {
 			memcpy(&in_crc, in_buf, 4);
+			in_crc = le32toh(in_crc);
 			in_crc = unmask_checksum(in_crc);
 
 			status = snappy_uncompressed_length(in_buf+4, in_len-4, &out_len);
@@ -186,6 +190,7 @@ int do_uncompress(void) {
 			write(1, out_buf, out_len);
 		} else if (type == CHUNK_UNCOMPRESSED) {
 			memcpy(&in_crc, in_buf, 4);
+			in_crc = le32toh(in_crc);
 			in_crc = unmask_checksum(in_crc);
 
 			out_crc = crc32(0, in_buf+4, in_len-4);
