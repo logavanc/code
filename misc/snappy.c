@@ -33,6 +33,7 @@ int read_chunk(int fd, unsigned char *type, char **buf, size_t *size) {
 	if (!type || !size || !buf)
 		return -EINVAL;
 
+	*size = 0;
 	len = read(fd, hdr, 4);
 	if (len != 4)
 		return -EIO;
@@ -40,6 +41,10 @@ int read_chunk(int fd, unsigned char *type, char **buf, size_t *size) {
 	*type = hdr[0];
 	/* TODO: how do I do this better */
 	*size = ((hdr[1] & 0xFF) << 16) | ((hdr[2] & 0xFF) << 8) | (hdr[3] & 0xFF);
+
+	if (*size == 0)
+		return 0;
+
 	*buf = malloc(*size);
 	if (!*buf)
 		return -ENOMEM;
@@ -123,10 +128,12 @@ int do_uncompress(void) {
 
 	for (;;) {
 		status = read_chunk(0, &type, &in_buf, &in_len);
-		if (status != 0)
-			return err(status);
-		if (!in_len)
-			break;
+		if (status != 0) {
+			if (status == -EIO && in_len == 0)
+				break;
+			else
+				return err(status);
+		}
 
 		status = snappy_uncompressed_length(in_buf, in_len, &out_len);
 		if (status != SNAPPY_OK)
