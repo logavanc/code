@@ -88,6 +88,8 @@ $(OBJ)/pause:		system/pause.c
 $(OBJ)/proctool:	system/proctool.c misc/util.c
 $(OBJ)/setns:		system/setns.c
 $(OBJ)/silentcat:	misc/silentcat.c
+$(OBJ)/snappy:		LDLIBS = -lsnappy
+$(OBJ)/snappy:		misc/snappy.c
 $(OBJ)/spawn:		system/spawn.c misc/util.c
 $(OBJ)/strtool:		misc/strtool.c misc/util.c
 $(OBJ)/subreaper:	system/subreaper.c
