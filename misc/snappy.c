@@ -80,7 +80,7 @@ int write_chunk(int fd, unsigned char type, char *buf, size_t size) {
 	char hdr[4];
 	size_t len;
 
-	if (type > 0xFF)
+	if (type > 0xFF || size > 0xFFFFFF)
 		return -EINVAL;
 
 	hdr[0] = type;
