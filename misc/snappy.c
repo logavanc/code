@@ -7,6 +7,11 @@
 #include <unistd.h>
 #include <snappy-c.h>
 
+#define CHUNK_STREAM_ID		0xFF
+#define CHUNK_COMPRESSED	0x00
+#define CHUNK_UNCOMPRESSED	0x01
+#define CHUNK_SKIPPABLE_MASK	0x80
+
 const char * snappy_strerror(int status) {
 	if (status == SNAPPY_INVALID_INPUT)
 		return "Invalid input";
@@ -92,7 +97,7 @@ int do_compress(void) {
 	in_buf = malloc(in_max);
 	out_buf = malloc(out_max);
 
-	write_chunk(1, 0xFF, "sNaPpY", 6);
+	write_chunk(1, CHUNK_STREAM_ID, "sNaPpY", 6);
 	for (;;) {
 		in_len = read(0, in_buf, in_max);
 		if (!in_len)
@@ -104,7 +109,7 @@ int do_compress(void) {
 		if (status != SNAPPY_OK)
 			return snappy_err(status);
 
-		write_chunk(1, 0x00, out_buf, out_len);
+		write_chunk(1, CHUNK_COMPRESSED, out_buf, out_len);
 	}
 	return 0;
 }
@@ -123,7 +128,7 @@ int do_uncompress(void) {
 	status = read_chunk(0, &type, &in_buf, &in_len);
 	if (status != 0)
 		return err(status);
-	if (type != 0xFF || in_len != 6 || memcmp(in_buf, "sNaPpY", 6) != 0)
+	if (type != CHUNK_STREAM_ID || in_len != 6 || memcmp(in_buf, "sNaPpY", 6))
 		return snappy_err(SNAPPY_INVALID_INPUT);
 
 	for (;;) {
@@ -135,21 +140,30 @@ int do_uncompress(void) {
 				return err(status);
 		}
 
-		status = snappy_uncompressed_length(in_buf, in_len, &out_len);
-		if (status != SNAPPY_OK)
-			return snappy_err(status);
+		if (type == CHUNK_COMPRESSED) {
+			status = snappy_uncompressed_length(in_buf, in_len, &out_len);
+			if (status != SNAPPY_OK)
+				return snappy_err(status);
 
-		if (out_len > out_max) {
-			free(out_buf);
-			out_max = out_len;
-			out_buf = malloc(out_max);
+			if (out_len > out_max) {
+				free(out_buf);
+				out_max = out_len;
+				out_buf = malloc(out_max);
+			}
+
+			status = snappy_uncompress(in_buf, in_len, out_buf, &out_len);
+			if (status != SNAPPY_OK)
+				return snappy_err(status);
+
+			write(1, out_buf, out_len);
+		} else if (type == CHUNK_UNCOMPRESSED) {
+			write(1, in_buf, in_len);
+		} else if (type & CHUNK_SKIPPABLE_MASK) {
+			continue;
+		} else {
+			fprintf(stderr, "snappy: Unknown chunk %02hhX\n", type);
+			return 1;
 		}
-
-		status = snappy_uncompress(in_buf, in_len, out_buf, &out_len);
-		if (status != SNAPPY_OK)
-			return snappy_err(status);
-
-		write(1, out_buf, out_len);
 	}
 	return 0;
 }
