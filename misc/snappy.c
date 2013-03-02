@@ -21,6 +21,55 @@ int snappy_err(int status) {
 	return 1;
 }
 
+int read_chunk(int fd, char *type, char **buf, size_t *size) {
+	char hdr[4];
+	size_t len;
+
+	if (!type || !size || !buf)
+		return -EINVAL;
+
+	len = read(fd, hdr, 4);
+	if (len != 4)
+		return -EIO;
+
+	*type = hdr[0];
+	*size = (hdr[1] << 16) | (hdr[2] << 8) | hdr[3];
+	*buf = malloc(*size);
+	if (!*buf)
+		return -ENOMEM;
+
+	len = read(fd, *buf, *size);
+	if (len != *size) {
+		free(*buf);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+int write_chunk(int fd, char type, char *buf, size_t size) {
+	char hdr[4];
+	size_t len;
+
+	if (type > 0xFF)
+		return -EINVAL;
+
+	hdr[0] = type;
+	hdr[1] = (size >> 16) & 0xFF;
+	hdr[2] = (size >> 8) & 0xFF;
+	hdr[3] = size & 0xFF;
+
+	len = write(fd, hdr, 4);
+	if (len != 4)
+		return -EIO;
+
+	len = write(fd, buf, size);
+	if (len != size)
+		return -EIO;
+
+	return 0;
+}
+
 int do_compress(void) {
 	char *in_buf, *out_buf;
 	size_t in_max, in_len,
