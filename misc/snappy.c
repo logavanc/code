@@ -1,4 +1,5 @@
 #include <getopt.h>
+#include <endian.h>
 #include <errno.h>
 #include <malloc.h>
 #include <stdio.h>
@@ -7,8 +8,6 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <snappy-c.h>
-
-#include "thirdparty/sparse-endian.h"
 
 #define CHUNK_STREAM_ID		0xFF
 #define CHUNK_COMPRESSED	0x00
