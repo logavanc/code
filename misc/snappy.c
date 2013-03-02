@@ -1,10 +1,25 @@
 #include <getopt.h>
+#include <errno.h>
 #include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <snappy-c.h>
+
+const char * snappy_strerror(int status) {
+	if (status == SNAPPY_INVALID_INPUT)
+		return "Invalid input";
+	else if (status == SNAPPY_BUFFER_TOO_SMALL)
+		return "Buffer too small";
+	else
+		return "Unknown error";
+}
+
+int snappy_err(int status) {
+	fprintf(stderr, "snappy: %s\n", snappy_strerror(status));
+	return 1;
+}
 
 int do_compress(void) {
 	char *in_buf, *out_buf;
@@ -26,7 +41,7 @@ int do_compress(void) {
 
 		status = snappy_compress(in_buf, in_len, out_buf, &out_len);
 		if (status != SNAPPY_OK)
-			abort();
+			return snappy_err(status);
 
 		write(1, out_buf, out_len);
 	}
@@ -50,7 +65,7 @@ int do_uncompress(void) {
 
 		status = snappy_uncompressed_length(in_buf, in_len, &out_len);
 		if (status != SNAPPY_OK)
-			abort();
+			return snappy_err(status);
 
 		if (out_len > out_max) {
 			free(out_buf);
@@ -60,7 +75,7 @@ int do_uncompress(void) {
 
 		status = snappy_uncompress(in_buf, in_len, out_buf, &out_len);
 		if (status != SNAPPY_OK)
-			abort();
+			return snappy_err(status);
 
 		write(1, out_buf, out_len);
 	}
