@@ -5,12 +5,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <snappy-c.h>
 
 #define CHUNK_STREAM_ID		0xFF
 #define CHUNK_COMPRESSED	0x00
 #define CHUNK_UNCOMPRESSED	0x01
 #define CHUNK_SKIPPABLE_MASK	0x80
+
+extern uint32_t crc32(uint32_t crc, const void *buf, size_t size);
+
+static inline uint32_t mask_checksum(uint32_t x) {
+	return ((x >> 15) | (x << 17)) + 0xa282ead8;
+}
+
+static inline uint32_t unmask_checksum(uint32_t x) {
+	x -= 0xa282ead8;
+	return (x >> 17) | (x << 15);
+}
 
 const char * snappy_strerror(int status) {
 	if (status == SNAPPY_INVALID_INPUT)
@@ -91,9 +103,10 @@ int do_compress(void) {
 	size_t in_max, in_len,
 		out_max, out_len;
 	int status;
+	uint32_t in_crc;
 
 	in_max = 16384;
-	out_max = snappy_max_compressed_length(in_max);
+	out_max = 4 + snappy_max_compressed_length(in_max);
 	in_buf = malloc(in_max);
 	out_buf = malloc(out_max);
 
@@ -105,11 +118,15 @@ int do_compress(void) {
 
 		out_len = out_max;
 
-		status = snappy_compress(in_buf, in_len, out_buf, &out_len);
+		in_crc = crc32(0, in_buf, in_len);
+		in_crc = mask_checksum(in_crc);
+		memcpy(out_buf, &in_crc, 4);
+
+		status = snappy_compress(in_buf, in_len, out_buf+4, &out_len);
 		if (status != SNAPPY_OK)
 			return snappy_err(status);
 
-		write_chunk(1, CHUNK_COMPRESSED, out_buf, out_len);
+		write_chunk(1, CHUNK_COMPRESSED, out_buf, out_len+4);
 	}
 	return 0;
 }
@@ -120,6 +137,7 @@ int do_uncompress(void) {
 		out_max, out_len;
 	unsigned char type;
 	int status;
+	uint32_t in_crc, out_crc;
 
 	in_max = out_max = 16384;
 	in_buf = malloc(in_max);
@@ -141,7 +159,10 @@ int do_uncompress(void) {
 		}
 
 		if (type == CHUNK_COMPRESSED) {
-			status = snappy_uncompressed_length(in_buf, in_len, &out_len);
+			memcpy(&in_crc, in_buf, 4);
+			in_crc = unmask_checksum(in_crc);
+
+			status = snappy_uncompressed_length(in_buf+4, in_len-4, &out_len);
 			if (status != SNAPPY_OK)
 				return snappy_err(status);
 
@@ -151,12 +172,29 @@ int do_uncompress(void) {
 				out_buf = malloc(out_max);
 			}
 
-			status = snappy_uncompress(in_buf, in_len, out_buf, &out_len);
+			status = snappy_uncompress(in_buf+4, in_len-4, out_buf, &out_len);
 			if (status != SNAPPY_OK)
 				return snappy_err(status);
 
+			out_crc = crc32(0, out_buf, out_len);
+			if (in_crc != out_crc) {
+				fprintf(stderr, "snappy: Bad checksum %08x, expected %08x\n",
+					out_crc, in_crc);
+				return 1;
+			}
+
 			write(1, out_buf, out_len);
 		} else if (type == CHUNK_UNCOMPRESSED) {
+			memcpy(&in_crc, in_buf, 4);
+			in_crc = unmask_checksum(in_crc);
+
+			out_crc = crc32(0, in_buf+4, in_len-4);
+			if (in_crc != out_crc) {
+				fprintf(stderr, "snappy: Bad checksum %08x, expected %08x\n",
+					out_crc, in_crc);
+				return 1;
+			}
+
 			write(1, in_buf, in_len);
 		} else if (type & CHUNK_SKIPPABLE_MASK) {
 			continue;
