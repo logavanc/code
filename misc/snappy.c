@@ -45,20 +45,20 @@ int snappy_err(int status) {
 }
 
 int read_chunk(int fd, unsigned char *type, char **buf, size_t *size) {
-	char hdr[4];
+	uint32_t hdr;
 	size_t len;
 
 	if (!type || !size || !buf)
 		return -EINVAL;
 
 	*size = 0;
-	len = read(fd, hdr, 4);
+	len = read(fd, &hdr, 4);
 	if (len != 4)
 		return -EIO;
 
-	*type = hdr[0];
-	/* TODO: how do I do this better */
-	*size = ((hdr[1] & 0xFF) << 16) | ((hdr[2] & 0xFF) << 8) | (hdr[3] & 0xFF);
+	hdr = le32toh(hdr);
+	*type = hdr >> 24;
+	*size = hdr & 0xFFFFFF;
 
 	if (*size == 0)
 		return 0;
@@ -77,18 +77,16 @@ int read_chunk(int fd, unsigned char *type, char **buf, size_t *size) {
 }
 
 int write_chunk(int fd, unsigned char type, char *buf, size_t size) {
-	char hdr[4];
+	uint32_t hdr;
 	size_t len;
 
 	if (type > 0xFF || size > 0xFFFFFF)
 		return -EINVAL;
 
-	hdr[0] = type;
-	hdr[1] = (size >> 16) & 0xFF;
-	hdr[2] = (size >> 8) & 0xFF;
-	hdr[3] = size & 0xFF;
+	hdr = (type << 24) | size;
+	hdr = htole32(hdr);
 
-	len = write(fd, hdr, 4);
+	len = write(fd, &hdr, 4);
 	if (len != 4)
 		return -EIO;
 
