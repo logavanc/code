@@ -1,3 +1,4 @@
+#include <getopt.h>
 #include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,8 +68,18 @@ int do_uncompress(void) {
 }
 
 int main(int argc, char *argv[]) {
-	if (argc >= 2 && !strcmp(argv[1], "-d"))
-		return do_uncompress();
-	else
+	int opt, compress = 1;
+
+	while ((opt = getopt(argc, argv, "d")) != -1) {
+		switch (opt) {
+		case 'd':
+			compress = 0;
+			break;
+		}
+	}
+
+	if (compress)
 		return do_compress();
+	else
+		return do_uncompress();
 }
