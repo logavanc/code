@@ -16,12 +16,17 @@ const char * snappy_strerror(int status) {
 		return "Unknown error";
 }
 
+int err(int status) {
+	fprintf(stderr, "snappy: %s\n", strerror(-status));
+	return 1;
+}
+
 int snappy_err(int status) {
 	fprintf(stderr, "snappy: %s\n", snappy_strerror(status));
 	return 1;
 }
 
-int read_chunk(int fd, char *type, char **buf, size_t *size) {
+int read_chunk(int fd, unsigned char *type, char **buf, size_t *size) {
 	char hdr[4];
 	size_t len;
 
@@ -33,7 +38,8 @@ int read_chunk(int fd, char *type, char **buf, size_t *size) {
 		return -EIO;
 
 	*type = hdr[0];
-	*size = (hdr[1] << 16) | (hdr[2] << 8) | hdr[3];
+	/* TODO: how do I do this better */
+	*size = ((hdr[1] & 0xFF) << 16) | ((hdr[2] & 0xFF) << 8) | (hdr[3] & 0xFF);
 	*buf = malloc(*size);
 	if (!*buf)
 		return -ENOMEM;
@@ -47,7 +53,7 @@ int read_chunk(int fd, char *type, char **buf, size_t *size) {
 	return 0;
 }
 
-int write_chunk(int fd, char type, char *buf, size_t size) {
+int write_chunk(int fd, unsigned char type, char *buf, size_t size) {
 	char hdr[4];
 	size_t len;
 
@@ -81,6 +87,7 @@ int do_compress(void) {
 	in_buf = malloc(in_max);
 	out_buf = malloc(out_max);
 
+	write_chunk(1, 0xFF, "sNaPpY", 6);
 	for (;;) {
 		in_len = read(0, in_buf, in_max);
 		if (!in_len)
@@ -92,7 +99,7 @@ int do_compress(void) {
 		if (status != SNAPPY_OK)
 			return snappy_err(status);
 
-		write(1, out_buf, out_len);
+		write_chunk(1, 0x00, out_buf, out_len);
 	}
 	return 0;
 }
@@ -101,14 +108,23 @@ int do_uncompress(void) {
 	char *in_buf, *out_buf;
 	size_t in_max, in_len,
 		out_max, out_len;
+	unsigned char type;
 	int status;
 
 	in_max = out_max = 16384;
 	in_buf = malloc(in_max);
 	out_buf = malloc(out_max);
 
+	status = read_chunk(0, &type, &in_buf, &in_len);
+	if (status != 0)
+		return err(status);
+	if (type != 0xFF || in_len != 6 || memcmp(in_buf, "sNaPpY", 6) != 0)
+		return snappy_err(SNAPPY_INVALID_INPUT);
+
 	for (;;) {
-		in_len = read(0, in_buf, in_max);
+		status = read_chunk(0, &type, &in_buf, &in_len);
+		if (status != 0)
+			return err(status);
 		if (!in_len)
 			break;
 
