@@ -208,12 +208,17 @@ class Database(object):
 	def find_by_uuid(self, uuid):
 		return self.entries[uuid]
 
+	def find_by_pattern(self, arg):
+		pass
+
 	def grep(self, arg):
 		if arg.startswith("+"):
 			yield from self.find_by_tag(arg[1:], exact=False)
-		else:
+		elif arg.replace("*", "").isalnum():
 			arg += "*"
 			yield from self.find_by_name(arg)
+		else:
+			yield from self.find_by_pattern(arg)
 
 	# Aggregate lookup
 
