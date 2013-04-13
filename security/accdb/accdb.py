@@ -208,6 +208,13 @@ class Database(object):
 	def find_by_uuid(self, uuid):
 		return self.entries[uuid]
 
+	def grep(self, arg):
+		if arg.startswith("+"):
+			yield from self.find_by_tag(arg[1:], exact=False)
+		else:
+			arg += "*"
+			yield from self.find_by_name(arg)
+
 	# Aggregate lookup
 
 	def tags(self):
@@ -543,11 +550,8 @@ class Interactive(cmd.Cmd):
 		if full and not sys.stdout.isatty():
 			print(db._modeline)
 
-		if arg.startswith('+'):
-			results = db.find_by_tag(arg[1:], exact=False)
-		else:
-			arg += '*'
-			results = db.find_by_name(arg)
+		results = db.grep(arg)
+
 		num = 0
 		for entry in results:
 			if entry.deleted:
