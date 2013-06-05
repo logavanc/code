@@ -62,28 +62,31 @@ class Line(object):
 		self.args = args or []
 
 	@classmethod
-	def split(cls, line):
+	def parse(cls, line, parse_prefix=True):
 		"""
-		Split an IRC protocol line into tokens as defined in RFC 1459
-		and the IRCv3 message-tags extension.
+		Parse an IRC protocol line into a Line object consisting of
+		tags, prefix, command, and arguments.
 		"""
 
 		line = line.decode("utf-8", "replace")
 		line = line.rstrip("\r\n").split(" ")
+
 		i, n = 0, len(line)
+		tags = prefix = None
 		parv = []
+		self = cls()
 
 		while i < n and line[i] == "":
 			i += 1
 
 		if i < n and line[i].startswith("@"):
-			parv.append(line[i])
+			tags = line[i][1:]
 			i += 1
 			while i < n and line[i] == "":
 				i += 1
 
 		if i < n and line[i].startswith(":"):
-			parv.append(line[i])
+			prefix = line[i][1:]
 			i += 1
 			while i < n and line[i] == "":
 				i += 1
@@ -99,22 +102,7 @@ class Line(object):
 			trailing = " ".join(line[i:])
 			parv.append(trailing[1:])
 
-		return parv
-
-	@classmethod
-	def parse(cls, line, parse_prefix=True):
-		"""
-		Parse an IRC protocol line into a Line object consisting of
-		tags, prefix, command, and arguments.
-		"""
-
-		parv = cls.split(line)
-		i, n = 0, len(parv)
-		self = cls()
-
-		if i < n and parv[i].startswith("@"):
-			tags = parv[i][1:]
-			i += 1
+		if tags:
 			self.tags = dict()
 			for item in tags.split(";"):
 				if "=" in item:
@@ -123,17 +111,15 @@ class Line(object):
 					k, v = item, true
 				self.tags[k] = v
 
-		if i < n and parv[i].startswith(":"):
-			prefix = parv[i][1:]
-			i += 1
+		if prefix:
 			if parse_prefix:
 				self.prefix = Prefix.parse(prefix)
 			else:
 				self.prefix = prefix
 
-		if i < n:
-			self.cmd = parv[i].upper()
-			self.args = parv[i:]
+		if parv:
+			self.cmd = parv[0].upper()
+			self.args = parv[1:]
 
 		return self
 
