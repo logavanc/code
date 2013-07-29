@@ -10,6 +10,7 @@ use locale;
 use Getopt::Long qw(:config no_ignore_case bundling require_order);
 use List::Util qw(max);
 use Net::DBus;
+use Net::DBus::Reactor;
 use POSIX;
 
 # Flags tracked by GNOME session manager (gnome-session/gsm-inhibitor-flag.h)
@@ -118,26 +119,39 @@ sub string_to_flags {
 	return $flags;
 }
 
+sub get_inhibitor_data {
+	my ($ih) = @_;
+
+	my $flags = $ih->GetFlags;
+	return {
+		path      => $ih->get_object_path,
+		app_id    => $ih->GetAppId,
+		client_id => eval {$ih->GetClientId} // "(none)",
+		reason    => eval {$ih->GetReason} // "(none)",
+		flags     => $flags,
+		szflags   => flags_to_string($flags),
+		top_xid   => $ih->GetToplevelXid,
+	};
+}
+
 sub get_inhibitors {
 	my ($flags) = @_;
 
 	sort {$a->{app_id} cmp $b->{app_id}}
-	map {
-		my $ih = $_;
-		my $flags = $ih->GetFlags;
-		{
-			path      => $ih->get_object_path,
-			app_id    => $ih->GetAppId,
-			client_id => eval {$ih->GetClientId} // "(none)",
-			reason    => eval {$ih->GetReason} // "(none)",
-			flags     => $flags,
-			szflags   => flags_to_string($flags),
-			top_xid   => $ih->GetToplevelXid,
-		};
-	}
+	map {get_inhibitor_data($_)}
 	grep {!$flags or $_->GetFlags & $flags}
 	map {SessionManager($_)}
 	@{SessionManager->GetInhibitors};
+}
+
+sub display_inhibitor {
+	my ($ih, $flag) = @_;
+}
+
+sub display_inhibitor_by_path {
+	my ($ih_path, @args) = @_;
+	my $ih_obj = SessionManager($ih_path);
+	display_inhibitor(get_inhibitor_data($ih_obj), @args);
 }
 
 sub display_inhibitors {
@@ -166,10 +180,27 @@ sub display_inhibitors {
 	}
 }
 
+sub watch_inhibitors {
+	my ($verbose, $flags) = @_;
+
+	my $sm = SessionManager;
+	$sm->connect_to_signal("InhibitorAdded", sub {
+		my ($ih_path) = @_;
+		display_inhibitor_by_path($ih_path, "+");
+	});
+	$sm->connect_to_signal("InhibitorRemoved", sub {
+		my ($ih_path) = @_;
+		display_inhibitor_by_path($ih_path, "-");
+	});
+
+	Net::DBus::Reactor->main->run;
+}
+
 # Option parser
 
 my $do_list	= 0;
 my $do_test	= 0;
+my $do_watch	= 0;
 my $always	= 0;
 my $verbose	= 0;
 my $app_id	= "gnome-inhibit";
@@ -186,6 +217,7 @@ GetOptions(
 	'r|reason=s'	=> \$reason,
 	't|test'	=> \$do_test,
 	'v|verbose'	=> \$verbose,
+	'w|watch'	=> \$do_watch,
 	'what=s'	=> \$flagstr,
 	'who=s'		=> \$app_id,
 	'why=s'		=> \$reason,
@@ -228,6 +260,17 @@ if ($do_list && $do_test) {
 	my $flags = SessionManager->Get("org.gnome.Session",
 					"InhibitedActions") & $filter;
 	say for $flags ? flags_to_array($flags) : "none";
+
+	exit 0;
+} elsif ($do_list && $do_watch) {
+	if (!$bus) {
+		warn "gnome-session is not running.\n";
+		exit 0;
+	}
+
+	my $flags = string_to_flags($flagstr //= "0");
+	display_inhibitors($verbose, get_inhibitors($flags));
+	watch_inhibitors($verbose, $flags);
 
 	exit 0;
 } elsif ($do_list) {
